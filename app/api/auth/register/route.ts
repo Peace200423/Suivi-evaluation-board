@@ -5,24 +5,28 @@ import { createSessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { slugify, randomSuffix } from "@/lib/slug";
 
 export async function POST(req: Request) {
-  const { orgName, adminNom, adminEmail, adminCode } = await req.json();
-
-  if (!orgName || !adminNom || !adminEmail || !adminCode) {
-    return NextResponse.json({ error: "Tous les champs sont requis." }, { status: 400 });
-  }
-  if (adminCode.length < 4) {
-    return NextResponse.json({ error: "Le code d'accès doit faire au moins 4 caractères." }, { status: 400 });
-  }
-
-  const existing = await prisma.member.findUnique({ where: { email: adminEmail } });
-  if (existing) {
-    return NextResponse.json(
-      { error: "Cet email est déjà associé à un compte. Connectez-vous plutôt." },
-      { status: 409 }
-    );
-  }
-
   try {
+    const body = await req.json().catch(() => null);
+    if (!body) {
+      return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
+    }
+    const { orgName, adminNom, adminEmail, adminCode } = body;
+
+    if (!orgName || !adminNom || !adminEmail || !adminCode) {
+      return NextResponse.json({ error: "Tous les champs sont requis." }, { status: 400 });
+    }
+    if (adminCode.length < 4) {
+      return NextResponse.json({ error: "Le code d'accès doit faire au moins 4 caractères." }, { status: 400 });
+    }
+
+    const existing = await prisma.member.findUnique({ where: { email: adminEmail } });
+    if (existing) {
+      return NextResponse.json(
+        { error: "Cet email est déjà associé à un compte. Connectez-vous plutôt." },
+        { status: 409 }
+      );
+    }
+
     const slug = `${slugify(orgName)}-${randomSuffix()}`;
     const codeHash = await bcrypt.hash(adminCode, 10);
 
@@ -54,7 +58,11 @@ export async function POST(req: Request) {
     });
     return res;
   } catch (e: any) {
-    console.error(e);
-    return NextResponse.json({ error: "Erreur lors de la création de l'espace." }, { status: 500 });
+    console.error("Erreur /api/auth/register", e);
+    const message =
+      e?.code === "P2002"
+        ? "Ce nom d'association ou cet email est déjà utilisé."
+        : "Erreur serveur. Vérifiez que DATABASE_URL / DIRECT_URL sont bien configurées et que `npx prisma db push` a été exécuté sur la base de production.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
